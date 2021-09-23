@@ -1,0 +1,255 @@
+package engine.graphics;
+
+import org.lwjgl.system.MemoryUtil;
+import engine.items.complex.GameItem;
+
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Consumer;
+
+import static org.lwjgl.opengl.GL11.GL_FLOAT;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+import static org.lwjgl.opengl.GL11.GL_TRIANGLES;
+import static org.lwjgl.opengl.GL11.GL_UNSIGNED_INT;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glDrawElements;
+import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
+import static org.lwjgl.opengl.GL13.GL_TEXTURE1;
+import static org.lwjgl.opengl.GL13.glActiveTexture;
+import static org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER;
+import static org.lwjgl.opengl.GL15.GL_ELEMENT_ARRAY_BUFFER;
+import static org.lwjgl.opengl.GL15.GL_STATIC_DRAW;
+import static org.lwjgl.opengl.GL15.glBindBuffer;
+import static org.lwjgl.opengl.GL15.glBufferData;
+import static org.lwjgl.opengl.GL15.glDeleteBuffers;
+import static org.lwjgl.opengl.GL15.glGenBuffers;
+import static org.lwjgl.opengl.GL20.glDisableVertexAttribArray;
+import static org.lwjgl.opengl.GL20.glEnableVertexAttribArray;
+import static org.lwjgl.opengl.GL20.glVertexAttribPointer;
+import static org.lwjgl.opengl.GL30.glBindVertexArray;
+import static org.lwjgl.opengl.GL30.glDeleteVertexArrays;
+import static org.lwjgl.opengl.GL30.glGenVertexArrays;
+
+public class Mesh {
+
+    public static final int MAX_WEIGHTS = 4;
+
+    protected final int vaoId;
+
+    protected final List<Integer> vboIdList;
+
+    private final int vertexCount;
+
+    private Material material;
+
+    private float boundingRadius;
+
+    public Mesh(float[] positions, float[] textCoords, float[] normals, int[] indices) {
+        this(positions, textCoords, normals, indices, Mesh.createEmptyIntArray(Mesh.MAX_WEIGHTS * positions.length / 3), Mesh.createEmptyFloatArray(Mesh.MAX_WEIGHTS * positions.length / 3));
+    }
+
+    public Mesh(float[] positions, float[] textCoords, float[] normals, int[] indices, int[] jointIndices, float[] weights) {
+        FloatBuffer posBuffer = null;
+        FloatBuffer textCoordsBuffer = null;
+        FloatBuffer vecNormalsBuffer = null;
+        FloatBuffer weightsBuffer = null;
+        IntBuffer jointIndicesBuffer = null;
+        IntBuffer indicesBuffer = null;
+        try {
+            calculateBoundingRadius(positions);
+
+            vertexCount = indices.length;
+            vboIdList = new ArrayList<>();
+
+            vaoId = glGenVertexArrays();
+            glBindVertexArray(vaoId);
+
+            int vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            posBuffer = MemoryUtil.memAllocFloat(positions.length);
+            posBuffer.put(positions).flip();
+            glBindBuffer(GL_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ARRAY_BUFFER, posBuffer, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+
+            vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            textCoordsBuffer = MemoryUtil.memAllocFloat(textCoords.length);
+            if (textCoordsBuffer.capacity() > 0) {
+                textCoordsBuffer.put(textCoords).flip();
+            } else {
+                textCoordsBuffer = MemoryUtil.memAllocFloat((positions.length * 3) / 2);
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ARRAY_BUFFER, textCoordsBuffer, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
+
+            vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            vecNormalsBuffer = MemoryUtil.memAllocFloat(normals.length);
+            if (vecNormalsBuffer.capacity() > 0) {
+                vecNormalsBuffer.put(normals).flip();
+            } else {
+                vecNormalsBuffer = MemoryUtil.memAllocFloat(positions.length);
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ARRAY_BUFFER, vecNormalsBuffer, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(2);
+            glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
+
+            vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            weightsBuffer = MemoryUtil.memAllocFloat(weights.length);
+            weightsBuffer.put(weights).flip();
+            glBindBuffer(GL_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ARRAY_BUFFER, weightsBuffer, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(3);
+            glVertexAttribPointer(3, 4, GL_FLOAT, false, 0, 0);
+
+            vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            jointIndicesBuffer = MemoryUtil.memAllocInt(jointIndices.length);
+            jointIndicesBuffer.put(jointIndices).flip();
+            glBindBuffer(GL_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ARRAY_BUFFER, jointIndicesBuffer, GL_STATIC_DRAW);
+            glEnableVertexAttribArray(4);
+            glVertexAttribPointer(4, 4, GL_FLOAT, false, 0, 0);
+
+            vboId = glGenBuffers();
+            vboIdList.add(vboId);
+            indicesBuffer = MemoryUtil.memAllocInt(indices.length);
+            indicesBuffer.put(indices).flip();
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboId);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indicesBuffer, GL_STATIC_DRAW);
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+        } finally {
+            if (posBuffer != null) {
+                MemoryUtil.memFree(posBuffer);
+            }
+            if (textCoordsBuffer != null) {
+                MemoryUtil.memFree(textCoordsBuffer);
+            }
+            if (vecNormalsBuffer != null) {
+                MemoryUtil.memFree(vecNormalsBuffer);
+            }
+            if (weightsBuffer != null) {
+                MemoryUtil.memFree(weightsBuffer);
+            }
+            if (jointIndicesBuffer != null) {
+                MemoryUtil.memFree(jointIndicesBuffer);
+            }
+            if (indicesBuffer != null) {
+                MemoryUtil.memFree(indicesBuffer);
+            }
+        }
+    }
+
+    private void calculateBoundingRadius(float[] positions) {
+        boundingRadius = 0;
+        for (float pos : positions) {
+            boundingRadius = Math.max(Math.abs(pos), boundingRadius);
+        }
+    }
+
+    public Material getMaterial() {
+        return material;
+    }
+
+    public void setMaterial(Material material) {
+        this.material = material;
+    }
+
+    public final int getVaoId() {
+        return vaoId;
+    }
+
+    public int getVertexCount() {
+        return vertexCount;
+    }
+
+    public float getBoundingRadius() {
+        return boundingRadius;
+    }
+
+    public void setBoundingRadius(float boundingRadius) {
+        this.boundingRadius = boundingRadius;
+    }
+
+    protected void initRender() {
+        Texture texture = material != null ? material.getTexture() : null;
+        if (texture != null) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture.getId());
+        }
+        Texture normalMap = material != null ? material.getNormalMap() : null;
+        if (normalMap != null) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, normalMap.getId());
+        }
+
+        glBindVertexArray(getVaoId());
+    }
+
+    protected void endRender() {
+        glBindVertexArray(0);
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    public void render() {
+        initRender();
+
+        glDrawElements(GL_TRIANGLES, getVertexCount(), GL_UNSIGNED_INT, 0);
+
+        endRender();
+    }
+
+    public void renderList(List<GameItem> gameItems, Consumer<GameItem> consumer) {
+        initRender();
+
+        for (GameItem gameItem : gameItems) {
+            if (gameItem.isInsideFrustum()) {
+                consumer.accept(gameItem);
+                glDrawElements(GL_TRIANGLES, getVertexCount(), GL_UNSIGNED_INT, 0);
+            }
+        }
+
+        endRender();
+    }
+
+    public void cleanUp() {
+        glDisableVertexAttribArray(0);
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        for (int vboId : vboIdList) {
+            glDeleteBuffers(vboId);
+        }
+
+        Texture texture = material.getTexture();
+        if (texture != null) {
+            texture.cleanup();
+        }
+
+        glBindVertexArray(0);
+        glDeleteVertexArrays(vaoId);
+    }
+
+    protected static float[] createEmptyFloatArray(int length) {
+        float[] result = new float[length];
+        Arrays.fill(result, (float) 0);
+        return result;
+    }
+
+    protected static int[] createEmptyIntArray(int length) {
+        int[] result = new int[length];
+        Arrays.fill(result, 0);
+        return result;
+    }
+}
